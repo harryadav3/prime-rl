@@ -437,16 +437,25 @@ async def orchestrate(config: OrchestratorConfig):
         # and — with max_async_level >= 2 — overlap with the next batch's inference.
         if is_vlm:
             vlm_cache = await asyncio.to_thread(build_vlm_image_cache, train_rollouts, processor)
+            mm_token_type_ids_mapping = {}
+            if hasattr(processor, "image_token_id") and processor.image_token_id is not None:
+                mm_token_type_ids_mapping[processor.image_token_id] = 1
+            if hasattr(processor, "video_token_id") and processor.video_token_id is not None:
+                mm_token_type_ids_mapping[processor.video_token_id] = 2
+
             logger.info(
                 f"VLM timing: extract={vlm_cache.extract_time:.2f}s, preprocess={vlm_cache.preprocess_time:.2f}s "
                 f"({vlm_cache.num_unique_images} unique images from {vlm_cache.num_unique_examples} examples)"
             )
         else:
             vlm_cache = None
+            mm_token_type_ids_mapping = None
 
         # Process rollouts in parallel
         def process_rollout(rollout: vf.RolloutOutput, rollout_idx: int) -> list[TrainingSample] | None:
-            return interleave_rollout(rollout, vlm_cache=vlm_cache, cache_key=rollout_idx)
+            return interleave_rollout(
+                rollout, vlm_cache=vlm_cache, cache_key=rollout_idx, mm_token_type_ids_mapping=mm_token_type_ids_mapping
+            )
 
         results = await asyncio.gather(
             *(asyncio.to_thread(process_rollout, r, rollout_idx) for rollout_idx, r in enumerate(train_rollouts))
