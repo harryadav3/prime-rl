@@ -676,10 +676,16 @@ class DefaultAdvantageConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["default"] = "default"
-    length_shaping_alpha: Annotated[
-        float | None,
-        Field(description="Penalty coefficient for Group Relative Reward Rescaling (GR³). Recommended value: 0.33"),
-    ] = None
+    length_shaping: Annotated[
+        bool,
+        Field(
+            description=(
+                "Enable correctness-gated length shaping. In mixed groups, shorter correct rollouts get "
+                "amplified advantage (up to 2x), longer correct rollouts are unchanged, incorrect untouched. "
+                "In all-correct groups, below-average-length rollouts get advantage in [0, 1], others get 0."
+            )
+        ),
+    ] = False
 
 
 class CustomAdvantageConfig(BaseModel):
@@ -1105,13 +1111,6 @@ class OrchestratorConfig(BaseConfig):
                 assert self.max_inflight_rollouts is not None
                 env_cfg.num_workers = max(1, math.ceil(self.max_inflight_rollouts / 256))
 
-        return self
-
-    @model_validator(mode="after")
-    def validate_length_shaping_requires_online_difficulty_filtering(self):
-        if isinstance(self.advantage, DefaultAdvantageConfig) and self.advantage.length_shaping_alpha is not None:
-            if not self.buffer.online_difficulty_filtering:
-                raise ValueError("Group Relative Reward (GR³) scaling requires online difficulty filtering")
         return self
 
     @model_validator(mode="after")
